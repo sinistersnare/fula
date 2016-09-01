@@ -33,6 +33,7 @@ use rustc_serialize::json;
 // TODO: Have a table of acceptable regions and gametypes
 // TODO: Link the DB tables, make GameServer use Region and GameType
 // TODO: Execute all sql files in bin/ at start of program.
+// TODO: MethodNotAllowed (405) errors for all common verbs.
 
 #[derive(Debug, Clone, RustcDecodable, RustcEncodable)]
 struct GameServer {
@@ -52,12 +53,13 @@ fn is_region_allowed(region: &str) -> bool {
 
     // TODO: take an iterator of Strings and check them all.
     // TODO: list all regions that dont exist, not just the first one found.
-
     if !all_regions.contains(region) {
         return false;
     }
     return true;
 }
+
+
 
 fn get_all(_ctx: Context, mut response: Response) {
     let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in say_hi");
@@ -78,7 +80,7 @@ fn get_all(_ctx: Context, mut response: Response) {
 }
 
 fn search_server(mut context: Context, mut response: Response) {
-    let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in add_server");
+    // let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in add_server");
     response.headers_mut().set(header::ContentType::json());
 
     let body = context.body.read_json_body().expect("Could not read json body");
@@ -136,14 +138,6 @@ fn main() {
     for cmd in contents.split(";") {
         conn.execute(cmd, &[]).expect("Could not execute create_tables.sql");
     }
-    // conn.execute(&contents, &[]).expect("Running create_tables.sql");
-    // conn.execute("CREATE TABLE IF NOT EXISTS GameServer (
-    //                 id          SERIAL PRIMARY KEY,
-    //                 name        VARCHAR NOT NULL,
-    //                 location    VARCHAR NOT NULL,
-    //                 gametype    VARCHAR NOT NULL,
-    //                 ip          VARCHAR NOT NULL
-    //              )", &[]).expect("create table");
 
     let server = Server {
         host: 8080.into(),
@@ -153,9 +147,15 @@ fn main() {
                 Get: get_all as fn(Context, Response),
 
                 // next level down
-                "all" => Get: get_all as fn(Context, Response),
-                "search" => Post: search_server as fn(Context, Response),
-                "add" => Post: add_server as fn(Context, Response),
+                "all" => {
+                    Get: get_all as fn(Context, Response),
+                },
+                "search" => {
+                    Post: search_server as fn(Context, Response),
+                },
+                "add" => {
+                    Post: add_server as fn(Context, Response),
+                },
             }
         },
         ..Server::default()
