@@ -10,7 +10,4 @@ log = "*"
 env_logger = "*"
 rustc-serialize = "*"
 
-diesel = "0.7.0"
-diesel_codegen = { version = "0.7.0", default-features = false, features = ["nightly", "postgres"] }
-dotenv = "0.8.0"
-dotenv_macros = "0.8.0"
+postgres = { version = "0.11.11" }
