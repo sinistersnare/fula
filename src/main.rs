@@ -12,6 +12,7 @@ extern crate env_logger;
 extern crate hyper;
 extern crate rustc_serialize;
 
+use std::iter::Iterator;
 use std::error::Error;
 use std::collections::HashSet;
 use std::io::prelude::*;
@@ -34,32 +35,33 @@ use rustc_serialize::json;
 // TODO: Link the DB tables, make GameServer use Region and GameType
 // TODO: Execute all sql files in bin/ at start of program.
 // TODO: MethodNotAllowed (405) errors for all common verbs.
+// TODO: get regions_allowed to take &str and return &'a str not String.
+// TODO: (also regions_allowed): Is it possible to not make a HashSet on no failures?.
+// TODO: Ability to search for multiple regions, gameTypes, and tags.
+// TODO Refactor regions_allowed to account for gameTypes too...?
 
 #[derive(Debug, Clone, RustcDecodable, RustcEncodable)]
 struct GameServer {
     id: i32,
     name: String,
     location: String,
-    gametype: String,
+    game_type: String,
     ip: String,
 }
 
-fn is_region_allowed(region: &str) -> bool {
-
-    let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in say_hi");
+fn regions_allowed<I>(conn: &Connection, regions: I) -> Option<HashSet<String>>
+                    where I: Iterator<Item=String> {
     let all_regions: HashSet<String> = conn.query("SELECT name FROM region", &[]).expect("could not select all regions.")
                                        .iter().map(|v| v.get::<usize, String>(0))
                                        .collect();
 
-    // TODO: take an iterator of Strings and check them all.
-    // TODO: list all regions that dont exist, not just the first one found.
-    if !all_regions.contains(region) {
-        return false;
+    let failed: HashSet<String> = regions.skip_while(|r| all_regions.contains(r)).collect();
+    if failed.len() == 0 {
+        None
+    } else {
+        Some(failed)
     }
-    return true;
 }
-
-
 
 fn get_all(_ctx: Context, mut response: Response) {
     let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in say_hi");
@@ -71,7 +73,7 @@ fn get_all(_ctx: Context, mut response: Response) {
             id: row.get(0),
             name: row.get(1),
             location: row.get(2),
-            gametype: row.get(3),
+            game_type: row.get(3),
             ip: row.get(4),
         };
         all.push(g);
@@ -80,24 +82,57 @@ fn get_all(_ctx: Context, mut response: Response) {
 }
 
 fn search_server(mut context: Context, mut response: Response) {
-    // let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in add_server");
+    let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in add_server");
     response.headers_mut().set(header::ContentType::json());
 
     let body = context.body.read_json_body().expect("Could not read json body");
 
-    let search_regions: Vec<String> = body.find("regions")
-                                    .and_then(|r| r.as_array()).expect("not an array.")
-                                    .iter().map(|r| r.as_string().expect("not a string").into())
-                                    .collect();
+    let search_region: Option<String> = body.find("region")
+                                             .and_then(|r| r.as_string())
+                                             .and_then(|s| Some(s.into()));
 
-    for region in &search_regions {
-        if !is_region_allowed(region) {
-            response.send(format!("\"Region `{}` does not exist in the Database!\"", region));
+    let game_type: Option<String> = body.find("gameType")
+                                         .and_then(|r| r.as_string())
+                                         .and_then(|s| Some(s.into()));
+
+    match regions_allowed(&conn, search_region.clone().into_iter()) {
+        None => {},
+        Some(failures) => {
+            response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
             return;
         }
     }
 
-    response.send(format!("Regions asked for: {:?}", search_regions));
+    let selection = match (search_region, game_type) {
+        (Some(r), Some(g)) => {
+            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE location = $1 AND gametype = $2", &[&r, &g])
+                .expect("Could not execute query on region and gametype")
+        },
+        (Some(r), None) => {
+            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE location = $1", &[&r])
+                .expect("Could not execute query on region only")
+        },
+        (None, Some(g)) => {
+            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE gametype = $1", &[&g])
+                .expect("could not execute query on gametype only")
+        },
+        (None, None) => {
+            conn.query("SELECT id, name, location, gametype, ip FROM gameserver", &[]).expect("Could not execute * query")
+        }
+    };
+
+    let mut results = vec![];
+    for row in &selection {
+        results.push(GameServer {
+            id: row.get(0),
+            name: row.get(1),
+            location: row.get(2),
+            game_type: row.get(3),
+            ip: row.get(4)
+        });
+    }
+    let json_response = json::encode(&results).expect("Could not encode search response as JSON");
+    response.send(format!("{{\"results\": {}}}", json_response))
 }
 
 fn add_server(mut context: Context, mut response: Response) {
@@ -116,9 +151,12 @@ fn add_server(mut context: Context, mut response: Response) {
     let ip: String = body.find("ip").expect("Key 'ip' not found in json.")
                              .as_string().expect("IP Address could not be converted to string.").into();
 
-    if !is_region_allowed(&region) {
-        response.send(format!("\"Region `{}` does not exist in the Database!\"", region));
-        return;
+    match regions_allowed(&conn, Some(region.clone()).into_iter()) {
+        None => {},
+        Some(failures) => {
+            response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
+            return;
+        }
     }
 
     conn.execute("INSERT INTO GameServer (name, location, gametype, ip) VALUES ($1, $2, $3, $4)",
