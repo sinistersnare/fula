@@ -35,10 +35,9 @@ use rustc_serialize::json;
 // TODO: Link the DB tables, make GameServer use Region and GameType
 // TODO: Execute all sql files in bin/ at start of program.
 // TODO: MethodNotAllowed (405) errors for all common verbs.
-// TODO: get regions_allowed to take &str and return &'a str not String.
-// TODO: (also regions_allowed): Is it possible to not make a HashSet on no failures?.
+// TODO: regions_allowed: Is it possible to not make a HashSet on no failures?.
 // TODO: Ability to search for multiple regions, gameTypes, and tags.
-// TODO Refactor regions_allowed to account for gameTypes too...?
+// TODO: Refactor regions_allowed to account for gameTypes too...?
 
 #[derive(Debug, Clone, RustcDecodable, RustcEncodable)]
 struct GameServer {
@@ -49,13 +48,14 @@ struct GameServer {
     ip: String,
 }
 
-fn regions_allowed<I>(conn: &Connection, regions: I) -> Option<HashSet<String>>
-                    where I: Iterator<Item=String> {
-    let all_regions: HashSet<String> = conn.query("SELECT name FROM region", &[]).expect("could not select all regions.")
-                                       .iter().map(|v| v.get::<usize, String>(0))
-                                       .collect();
+fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Option<HashSet<&'b str>>
+                    where I: Iterator<Item=&'b str> {
+    let all_regions: HashSet<String> = conn.query("SELECT name FROM region", &[])
+                                      .expect("could not select all regions.")
+                                      .into_iter().map(|v| v.get::<usize, String>(0))
+                                      .collect();
 
-    let failed: HashSet<String> = regions.skip_while(|r| all_regions.contains(r)).collect();
+    let failed: HashSet<&'b str> = regions.filter(|r| !all_regions.contains(*r)).collect();
     if failed.len() == 0 {
         None
     } else {
@@ -87,15 +87,15 @@ fn search_server(mut context: Context, mut response: Response) {
 
     let body = context.body.read_json_body().expect("Could not read json body");
 
-    let search_region: Option<String> = body.find("region")
+    let search_region: Option<&str> = body.find("region")
                                              .and_then(|r| r.as_string())
-                                             .and_then(|s| Some(s.into()));
+                                             .and_then(|s| Some(s));
 
     let game_type: Option<String> = body.find("gameType")
                                          .and_then(|r| r.as_string())
                                          .and_then(|s| Some(s.into()));
 
-    match regions_allowed(&conn, search_region.clone().into_iter()) {
+    match regions_allowed(&conn, search_region.into_iter()) {
         None => {},
         Some(failures) => {
             response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
@@ -151,7 +151,7 @@ fn add_server(mut context: Context, mut response: Response) {
     let ip: String = body.find("ip").expect("Key 'ip' not found in json.")
                              .as_string().expect("IP Address could not be converted to string.").into();
 
-    match regions_allowed(&conn, Some(region.clone()).into_iter()) {
+    match regions_allowed(&conn, Some(region.as_str()).into_iter()) {
         None => {},
         Some(failures) => {
             response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
