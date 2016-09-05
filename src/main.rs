@@ -26,7 +26,7 @@ use rustc_serialize::json;
 
 // TODO: Connection pooling?
 // TODO: Do not allow duplicate IP addresses -- make an UPDATE call instead
-// TODO: Have HashSets of possible GameTypes and Locations and check against them.
+// TODO: Have HashSets of possible GameTypes and regions and check against them.
 // TODO: Descriptive error messages on not providing fields for /add
 // TODO: Do not panic! return appropriate HTTP codes.
 // TODO: Flesh out search functionality
@@ -38,12 +38,13 @@ use rustc_serialize::json;
 // TODO: regions_allowed: Is it possible to not make a HashSet on no failures?.
 // TODO: Ability to search for multiple regions, gameTypes, and tags.
 // TODO: Refactor regions_allowed to account for gameTypes too...?
+// TODO: Use diesel instead of rust-postgres directly.
 
 #[derive(Debug, Clone, RustcDecodable, RustcEncodable)]
 struct GameServer {
     id: i32,
     name: String,
-    location: String,
+    region: String,
     game_type: String,
     ip: String,
 }
@@ -54,7 +55,6 @@ fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Option<HashSe
                                       .expect("could not select all regions.")
                                       .into_iter().map(|v| v.get::<usize, String>(0))
                                       .collect();
-
     let failed: HashSet<&'b str> = regions.filter(|r| !all_regions.contains(*r)).collect();
     if failed.len() == 0 {
         None
@@ -68,11 +68,11 @@ fn get_all(_ctx: Context, mut response: Response) {
     response.headers_mut().set(header::ContentType::json());
 
     let mut all = vec![];
-    for row in &conn.query("SELECT id, name, location, gametype, ip FROM GameServer", &[]).expect("query in say_hi") {
+    for row in &conn.query("SELECT id, name, region, gametype, ip FROM GameServer", &[]).expect("query in say_hi") {
         let g = GameServer {
             id: row.get(0),
             name: row.get(1),
-            location: row.get(2),
+            region: row.get(2),
             game_type: row.get(3),
             ip: row.get(4),
         };
@@ -105,19 +105,20 @@ fn search_server(mut context: Context, mut response: Response) {
 
     let selection = match (search_region, game_type) {
         (Some(r), Some(g)) => {
-            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE location = $1 AND gametype = $2", &[&r, &g])
+            conn.query("SELECT id, name, region, gametype, ip FROM gameserver
+                            WHERE region = $1 AND gametype = $2", &[&r, &g])
                 .expect("Could not execute query on region and gametype")
         },
         (Some(r), None) => {
-            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE location = $1", &[&r])
+            conn.query("SELECT id, name, region, gametype, ip FROM gameserver WHERE region = $1", &[&r])
                 .expect("Could not execute query on region only")
         },
         (None, Some(g)) => {
-            conn.query("SELECT id, name, location, gametype, ip FROM gameserver WHERE gametype = $1", &[&g])
+            conn.query("SELECT id, name, region, gametype, ip FROM gameserver WHERE gametype = $1", &[&g])
                 .expect("could not execute query on gametype only")
         },
         (None, None) => {
-            conn.query("SELECT id, name, location, gametype, ip FROM gameserver", &[]).expect("Could not execute * query")
+            conn.query("SELECT id, name, region, gametype, ip FROM gameserver", &[]).expect("Could not execute * query")
         }
     };
 
@@ -126,7 +127,7 @@ fn search_server(mut context: Context, mut response: Response) {
         results.push(GameServer {
             id: row.get(0),
             name: row.get(1),
-            location: row.get(2),
+            region: row.get(2),
             game_type: row.get(3),
             ip: row.get(4)
         });
@@ -136,7 +137,6 @@ fn search_server(mut context: Context, mut response: Response) {
 }
 
 fn add_server(mut context: Context, mut response: Response) {
-
     let conn = Connection::connect("postgres://fula@localhost", SslMode::None).expect("connect in add_server");
     response.headers_mut().set(header::ContentType::json());
 
@@ -159,7 +159,7 @@ fn add_server(mut context: Context, mut response: Response) {
         }
     }
 
-    conn.execute("INSERT INTO GameServer (name, location, gametype, ip) VALUES ($1, $2, $3, $4)",
+    conn.execute("INSERT INTO GameServer (name, region, gametype, ip) VALUES ($1, $2, $3, $4)",
                  &[&name, &region, &game_type, &ip]).expect("Could not add server to table");
 
     response.send(format!("\"server `{}` added!\"", name));

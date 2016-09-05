@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS GameServer (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR NOT NULL,
-    location    VARCHAR NOT NULL,
-    gametype    VARCHAR NOT NULL,
-    ip          VARCHAR NOT NULL
+    id                      SERIAL PRIMARY KEY,
+    name                    VARCHAR NOT NULL,
+    region                  VARCHAR NOT NULL,
+    game_type               VARCHAR NOT NULL,
+    ip                      VARCHAR NOT NULL,
 );
 
 CREATE TABLE IF NOT EXISTS Region (
