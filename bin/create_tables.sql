@@ -4,6 +4,11 @@ CREATE TABLE IF NOT EXISTS GameServer (
     region                  VARCHAR NOT NULL,
     game_type               VARCHAR NOT NULL,
     ip                      VARCHAR NOT NULL,
+    max_users               INT NOT NULL,
+    current_users           INT NOT NULL,
+    current_premium_users   INT,
+    max_premium_users       INT,
+    tags                    VARCHAR[] NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS Region (
