@@ -1,13 +1,13 @@
-
+//! Routes used by the REST API
 
 use std::collections::HashSet;
 
 use postgres::{Connection, SslMode};
 use rustful::{Context, Response, header};
+use rustc_serialize::json;
 
 use game_server::{GameServer, make_game_server_from_row};
 
-use rustc_serialize::json;
 
 fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Option<HashSet<&'b str>>
                     where I: Iterator<Item=&'b str> {
@@ -28,10 +28,8 @@ pub fn get_all(_ctx: Context, mut response: Response) {
                     .expect("connect in get_all");
     response.headers_mut().set(header::ContentType::json());
 
-    let mut all = vec![];
-    for row in &conn.query("SELECT * FROM GameServer", &[]).expect("query in get_all") {
-        all.push(make_game_server_from_row(row))
-    }
+    let all: Vec<GameServer> = conn.query("SELECT * FROM GameServer", &[]).expect("Query in get_all")
+                                   .iter().map(make_game_server_from_row).collect();
     response.send(format!("{{\"results\": {}}}", json::encode(&all).expect("couldnt encode")));
 }
 
@@ -46,7 +44,7 @@ pub fn search_server(mut context: Context, mut response: Response) {
                                              .and_then(|r| r.as_string())
                                              .and_then(|s| Some(s));
 
-    let game_type: Option<String> = body.find("gameType")
+    let game_type: Option<String> = body.find("game_type")
                                          .and_then(|r| r.as_string())
                                          .and_then(|s| Some(s.into()));
 
@@ -60,16 +58,16 @@ pub fn search_server(mut context: Context, mut response: Response) {
 
     let selection = match (search_region, game_type) {
         (Some(r), Some(g)) => {
-            conn.query("SELECT * FROM gameserver WHERE region = $1 AND gametype = $2", &[&r, &g])
-                .expect("Could not execute query on region and gametype")
+            conn.query("SELECT * FROM gameserver WHERE region = $1 AND game_type = $2", &[&r, &g])
+                .expect("Could not execute query on region and game_type")
         },
         (Some(r), None) => {
             conn.query("SELECT * FROM gameserver WHERE region = $1", &[&r])
                 .expect("Could not execute query on region only")
         },
         (None, Some(g)) => {
-            conn.query("SELECT * FROM gameserver WHERE gametype = $1", &[&g])
-                .expect("could not execute query on gametype only")
+            conn.query("SELECT * FROM gameserver WHERE game_type = $1", &[&g])
+                .expect("could not execute query on game_type only")
         },
         (None, None) => {
             conn.query("SELECT * FROM gameserver", &[]).expect("Could not execute * query")

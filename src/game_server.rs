@@ -1,7 +1,9 @@
+//! Code revolving around the GameServer struct and its use throughout the codebase.
+//! The GameServer struct should directly match up to the GameServer table on the Database.
+//! Which is why we should be using Diesel.
 
 use postgres::rows::Row;
 use rustc_serialize::{Decoder, Decodable, DecoderHelpers};
-use std::default::Default;
 
 #[derive(Debug, Clone, RustcEncodable)]
 pub struct GameServer {
@@ -78,23 +80,6 @@ impl Decodable for GameServer {
                 tags: tags
             })
         })
-    }
-}
-
-impl Default for GameServer {
-    fn default() -> Self {
-        GameServer {
-            id: 0,
-            name: "".into(),
-            region: "".into(),
-            game_type: "".into(),
-            ip: "".into(),
-            max_users: 0,
-            current_users: 0,
-            current_premium_users: None,
-            max_premium_users: None,
-            tags: Vec::new(),
-        }
     }
 }
 

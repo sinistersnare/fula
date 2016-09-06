@@ -26,8 +26,10 @@ mod routes;
 
 
 // TODO: Move all these TODOs to an issue tracker.
+// TODO: Documentation? Doc comments would be nice.
 // TODO: Connection pooling?
 // TODO: Do not allow duplicate IP addresses -- make an UPDATE call instead
+// TODO: Allow updating of servers -- would require some sort of Auth.
 // TODO: Have HashSets of possible GameTypes and regions and check against them.
 // TODO: Descriptive error messages on not providing fields for /add
 // TODO: Do not panic! return appropriate HTTP codes.
@@ -41,8 +43,8 @@ mod routes;
 // TODO: Ability to search for multiple regions, gameTypes, and tags.
 // TODO: Refactor regions_allowed to account for gameTypes too...?
 // TODO: Use diesel instead of rust-postgres directly.
-// TODO /add converts from i64 to i32. should probably harden the check.
 // TODO: game_server: make fields of GameServer private when switched to Diesel.
+// TODO: Unit Testing!!!!!!!!
 
 
 fn main() {
