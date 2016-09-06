@@ -15,6 +15,7 @@ fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Option<HashSe
                                       .expect("could not select all regions.")
                                       .into_iter().map(|v| v.get::<usize, String>(0))
                                       .collect();
+    // FIXME: Is it possible to not make a HashSet on no failures?.
     let failed: HashSet<&'b str> = regions.filter(|r| !all_regions.contains(*r)).collect();
     if failed.len() == 0 {
         None

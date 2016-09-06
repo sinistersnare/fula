@@ -1,11 +1,7 @@
-#![feature(plugin, custom_derive)]
-
 #[macro_use]
 extern crate postgres;
-
 #[macro_use]
 extern crate rustful;
-
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -17,35 +13,14 @@ use std::io::prelude::*;
 use std::fs::File;
 
 use postgres::{Connection, SslMode};
-
 use rustful::{Server, Context, Response, TreeRouter};
 
 use routes::{get_all, search_server, add_server};
+
 mod game_server;
 mod routes;
 
-
-// TODO: Move all these TODOs to an issue tracker.
 // TODO: Documentation? Doc comments would be nice.
-// TODO: Connection pooling?
-// TODO: Do not allow duplicate IP addresses -- make an UPDATE call instead
-// TODO: Allow updating of servers -- would require some sort of Auth.
-// TODO: Have HashSets of possible GameTypes and regions and check against them.
-// TODO: Descriptive error messages on not providing fields for /add
-// TODO: Do not panic! return appropriate HTTP codes.
-// TODO: Flesh out search functionality
-// TODO: Thorough logging
-// TODO: Have a table of acceptable regions and gametypes
-// TODO: Link the DB tables, make GameServer use Region and GameType
-// TODO: Execute all sql files in bin/ at start of program.
-// TODO: MethodNotAllowed (405) errors for all common verbs.
-// TODO: regions_allowed: Is it possible to not make a HashSet on no failures?.
-// TODO: Ability to search for multiple regions, gameTypes, and tags.
-// TODO: Refactor regions_allowed to account for gameTypes too...?
-// TODO: Use diesel instead of rust-postgres directly.
-// TODO: game_server: make fields of GameServer private when switched to Diesel.
-// TODO: Unit Testing!!!!!!!!
-
 
 fn main() {
     env_logger::init().expect("env_logger init");
