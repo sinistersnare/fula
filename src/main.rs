@@ -23,8 +23,10 @@ use postgres::{Connection, SslMode, rows};
 
 use rustful::{Server, Context, Response, TreeRouter, header};
 
-use rustc_serialize::json;
+use rustc_serialize::{json, Decodable, Decoder, DecoderHelpers};
 
+// TODO: Move all these TODOs to an issue tracker.
+// TODO: split out code to different files.
 // TODO: Connection pooling?
 // TODO: Do not allow duplicate IP addresses -- make an UPDATE call instead
 // TODO: Have HashSets of possible GameTypes and regions and check against them.
@@ -42,7 +44,7 @@ use rustc_serialize::json;
 // TODO: Use diesel instead of rust-postgres directly.
 // TODO /add converts from i64 to i32. should probably harden the check.
 
-#[derive(Debug, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Debug, Clone, RustcEncodable)]
 struct GameServer {
     id: i32,
     name: String,
@@ -54,6 +56,70 @@ struct GameServer {
     current_premium_users: Option<i32>,
     max_premium_users: Option<i32>,
     tags: Vec<String>,
+}
+
+impl Decodable for GameServer {
+    fn decode<D: Decoder>(d: &mut D) -> Result<GameServer, D::Error> {
+        d.read_struct("GameServer", 10, |d| {
+            let id: i32 = match d.read_struct_field("id", 0, |d| { d.read_i32()}) {
+                Ok(v) => v,
+                Err(_e) => -1,
+            };
+            let name = match d.read_struct_field("name", 1, |d| { d.read_str()}) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Couldnt Decode a name from GameServer JSON")); },
+            };
+            let region = match d.read_struct_field("region", 2, |d| { d.read_str()}) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Couldnt Decode a region from GameServer JSON")); },
+            };
+            let game_type = match d.read_struct_field("game_type", 3, |d| { d.read_str()}) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Couldnt Decode a game_type from GameServer JSON")); },
+            };
+            let ip = match d.read_struct_field("ip", 4, |d| { d.read_str()}) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Couldnt Decode an IP from GameServer JSON")); },
+            };
+            let max_users = match d.read_struct_field("max_users", 5, |d| { d.read_i32()}) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Couldnt Decode max_users from GameServer JSON")); },
+            };
+            let current_users = match d.read_struct_field("current_users", 6, |d| { d.read_i32()}) {
+                Ok(v) => v,
+                Err(_e) => 0,
+            };
+            let current_premium_users = match d.read_struct_field("current_premium_users",
+                                                        7, |d| { d.read_i32()}) {
+                Ok(v) => Some(v),
+                Err(_e) => None,
+            };
+            let max_premium_users: Option<i32> = match d.read_struct_field("max_premium_users",
+                                                        8, |d| { d.read_i32()}) {
+                Ok(v) => Some(v),
+                Err(_e) => None,
+            };
+            let tags: Vec<String> = match d.read_struct_field("tags", 9, |d| {
+                d.read_to_vec(|d| d.read_str())
+            }) {
+                Ok(v) => v,
+                Err(_e) => { return Err(d.error("Could not decode tag as str."))}
+            };
+
+            Ok(GameServer {
+                id: id,
+                name: name,
+                region: region,
+                game_type: game_type,
+                ip: ip,
+                max_users: max_users,
+                current_users: current_users,
+                current_premium_users: current_premium_users,
+                max_premium_users: max_premium_users,
+                tags: tags
+            })
+        })
+    }
 }
 
 impl Default for GameServer {
@@ -168,31 +234,10 @@ fn add_server(mut context: Context, mut response: Response) {
     let conn = Connection::connect("postgres://fula@localhost", SslMode::None)
                     .expect("connect in add_server");
     response.headers_mut().set(header::ContentType::json());
-
     let parsed_server: GameServer = context.body.decode_json_body()
                                            .expect("Could not decode JSON into a GameServer object");
-    let body = context.body.read_json_body().expect("Could not read json body");
 
-    let region: String = body.find("region").expect("Key 'region' not found in json.")
-                             .as_string().expect("Region could not be converted to string.").into();
-    let game_type: String = body.find("gameType").expect("Key 'gameType' not found in json.")
-                                .as_string().expect("the game type could not be converted to string.")
-                                .into();
-    let name: String = body.find("name").expect("Key 'name' not found in json.")
-                           .as_string().expect("Name could not be converted to string.").into();
-    let ip: String = body.find("ip").expect("Key 'ip' not found in json.")
-                         .as_string().expect("IP Address could not be converted to string.").into();
-    let max_users: i32 = body.find("max_users").expect("Key 'maxUsers' not found in json.")
-                             .as_i64().expect("maxUsers could not be converted to an i64.") as i32;
-    let max_premium_users: Option<i32> = body.find("max_premium_users")
-                                .and_then(|v| v.as_i64()
-                                    .expect("max_premium_users could not be converted to i64.") as i32);
-    let tags: Vec<String> = body.find("tags").expect("Could not find `tags` key.")
-                                .as_array().expect("Could not convert tags to an array")
-                                .iter().map(|v| v.as_string().expect("Couldnt convert tag to string"))
-                                .collect()
-
-    match regions_allowed(&conn, Some(region.as_str()).into_iter()) {
+    match regions_allowed(&conn, Some(parsed_server.region.as_str()).into_iter()) {
         None => {},
         Some(failures) => {
             response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
@@ -200,10 +245,18 @@ fn add_server(mut context: Context, mut response: Response) {
         }
     }
 
-    conn.execute("INSERT INTO GameServer (name, region, gametype, ip) VALUES ($1, $2, $3, $4)",
-                 &[&name, &region, &game_type, &ip]).expect("Could not add server to table");
+    conn.execute("INSERT INTO GameServer (name, region, game_type, ip, max_users,
+                                            current_users, current_premium_users,
+                                            max_premium_users, tags)
+                                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                 &[&parsed_server.name, &parsed_server.region,
+                   &parsed_server.game_type, &parsed_server.ip,
+                   &parsed_server.max_users, &parsed_server.current_users,
+                   &parsed_server.current_premium_users, &parsed_server.max_premium_users,
+                   &parsed_server.tags])
+        .expect("Could not add server to table");
 
-    response.send(format!("\"server `{}` added!\"", name));
+    response.send(format!("\"server `{}` added!\"", &parsed_server.name));
 }
 
 fn main() {
