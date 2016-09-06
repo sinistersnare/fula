@@ -3,43 +3,80 @@
 use std::collections::HashSet;
 
 use postgres::{Connection, SslMode};
-use rustful::{Context, Response, header};
+use rustful::{Context, Response, header, StatusCode};
 use rustc_serialize::json;
 
 use game_server::{GameServer, make_game_server_from_row};
 
-
-fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Option<HashSet<&'b str>>
+fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Result<Option<HashSet<&'b str>>, ()>
                     where I: Iterator<Item=&'b str> {
-    let all_regions: HashSet<String> = conn.query("SELECT name FROM region", &[])
-                                      .expect("could not select all regions.")
-                                      .into_iter().map(|v| v.get::<usize, String>(0))
-                                      .collect();
+    let all_regions: HashSet<String> = match conn.query("SELECT name FROM region", &[]) {
+        Ok(c) => c.into_iter().map(|v| v.get::<usize, String>(0)).collect(),
+        Err(e) => {
+            error!("Could not execute query in regions_allowed: {:?}", e);
+            return Err(());
+        }
+    };
     // FIXME: Is it possible to not make a HashSet on no failures?.
     let failed: HashSet<&'b str> = regions.filter(|r| !all_regions.contains(*r)).collect();
     if failed.len() == 0 {
-        None
+        Ok(None)
     } else {
-        Some(failed)
+        Ok(Some(failed))
     }
 }
 
 pub fn get_all(_ctx: Context, mut response: Response) {
-    let conn = Connection::connect("postgres://fula@localhost", SslMode::None)
-                    .expect("connect in get_all");
+    let conn = match Connection::connect("postgres://fula@localhost", SslMode::None) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Connecting to the DB in get_all failed! {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
     response.headers_mut().set(header::ContentType::json());
 
-    let all: Vec<GameServer> = conn.query("SELECT * FROM GameServer", &[]).expect("Query in get_all")
-                                   .iter().map(make_game_server_from_row).collect();
-    response.send(format!("{{\"results\": {}}}", json::encode(&all).expect("couldnt encode")));
+    let all: Vec<GameServer> = match conn.query("SELECT * FROM GameServer", &[]) {
+        Ok(r) => r.iter().map(make_game_server_from_row).collect(),
+        Err(e) => {
+            error!("Could not execute the query in get_all: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
+
+    let encoded = match json::encode(&all) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Could not encode results of get_all query as json: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
+
+    response.send(format!("{{\"results\": {}, \"size\": {}}}", encoded, all.len()));
 }
 
 pub fn search_server(mut context: Context, mut response: Response) {
-    let conn = Connection::connect("postgres://fula@localhost", SslMode::None)
-                    .expect("connect in add_server");
+    let conn = match Connection::connect("postgres://fula@localhost", SslMode::None) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Connecting to the DB in search_server failed! {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
     response.headers_mut().set(header::ContentType::json());
 
-    let body = context.body.read_json_body().expect("Could not read json body");
+    let body = match context.body.read_json_body() {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Could not read search_server json body: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
 
     let search_region: Option<&str> = body.find("region")
                                              .and_then(|r| r.as_string())
@@ -50,28 +87,64 @@ pub fn search_server(mut context: Context, mut response: Response) {
                                          .and_then(|s| Some(s.into()));
 
     match regions_allowed(&conn, search_region.into_iter()) {
-        None => {},
-        Some(failures) => {
-            response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
+        Ok(v) => match v {
+            None => {},
+            Some(failures) => {
+                response.set_status(StatusCode::BadRequest);
+                response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
+                return;
+           }
+        },
+        Err(_) => {
+            error!("Failed in regions_allowed, can not complete request.");
+            response.set_status(StatusCode::InternalServerError);
             return;
         }
     }
 
+    // FIXME: This should not be 4 different queries.
+    // Perhaps Diesel will fix this.
     let selection = match (search_region, game_type) {
         (Some(r), Some(g)) => {
-            conn.query("SELECT * FROM gameserver WHERE region = $1 AND game_type = $2", &[&r, &g])
-                .expect("Could not execute query on region and game_type")
+            match conn.query("SELECT * FROM gameserver WHERE region = $1 AND game_type = $2", &[&r, &g]) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Could not execute search query on region and game_type: {:?}", e);
+                    response.set_status(StatusCode::InternalServerError);
+                    return;
+                }
+
+            }
         },
         (Some(r), None) => {
-            conn.query("SELECT * FROM gameserver WHERE region = $1", &[&r])
-                .expect("Could not execute query on region only")
+            match conn.query("SELECT * FROM gameserver WHERE region = $1", &[&r]) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Could not execute query on region only: {:?}", e);
+                    response.set_status(StatusCode::InternalServerError);
+                    return;
+                }
+            }
         },
         (None, Some(g)) => {
-            conn.query("SELECT * FROM gameserver WHERE game_type = $1", &[&g])
-                .expect("could not execute query on game_type only")
+            match conn.query("SELECT * FROM gameserver WHERE game_type = $1", &[&g]) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Could not execute query on game_type only: {:?}", e);
+                    response.set_status(StatusCode::InternalServerError);
+                    return;
+                }
+            }
         },
         (None, None) => {
-            conn.query("SELECT * FROM gameserver", &[]).expect("Could not execute * query")
+            match conn.query("SELECT * FROM gameserver", &[]) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Could not execute a query on all servers: {:?}", e);
+                    response.set_status(StatusCode::InternalServerError);
+                    return;
+                }
+            }
         }
     };
 
@@ -80,26 +153,53 @@ pub fn search_server(mut context: Context, mut response: Response) {
         results.push(make_game_server_from_row(row));
     }
 
-    let json_response = json::encode(&results).expect("Could not encode search response as JSON");
+    let json_response = match json::encode(&results) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Could not encode search response as JSON: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
     response.send(format!("{{\"results\": {}}}", json_response))
 }
 
 pub fn add_server(mut context: Context, mut response: Response) {
-    let conn = Connection::connect("postgres://fula@localhost", SslMode::None)
-                    .expect("connect in add_server");
+    let conn = match Connection::connect("postgres://fula@localhost", SslMode::None) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Could connect to the DB in add_server: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
     response.headers_mut().set(header::ContentType::json());
-    let parsed_server: GameServer = context.body.decode_json_body()
-                                           .expect("Could not decode JSON into a GameServer object");
+    let parsed_server: GameServer = match context.body.decode_json_body() {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Could not decode request JSON into a GameServer object: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
 
     match regions_allowed(&conn, Some(parsed_server.region.as_str()).into_iter()) {
-        None => {},
-        Some(failures) => {
-            response.send(format!("\" regions `{:?}` do not exist in the Database!\"", failures));
+        Ok(v) => match v {
+            None => {},
+            Some(failures) => {
+                response.set_status(StatusCode::BadRequest);
+                response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
+                return;
+           }
+        },
+        Err(_) => {
+            error!("Failed in regions_allowed, can not complete request.");
+            response.set_status(StatusCode::InternalServerError);
             return;
         }
     }
 
-    conn.execute("INSERT INTO GameServer (name, region, game_type, ip, max_users,
+    match conn.execute("INSERT INTO GameServer (name, region, game_type, ip, max_users,
                                             current_users, current_premium_users,
                                             max_premium_users, tags)
                                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
@@ -107,8 +207,15 @@ pub fn add_server(mut context: Context, mut response: Response) {
                    &parsed_server.game_type, &parsed_server.ip,
                    &parsed_server.max_users, &parsed_server.current_users,
                    &parsed_server.current_premium_users, &parsed_server.max_premium_users,
-                   &parsed_server.tags])
-        .expect("Could not add server to table");
+                   &parsed_server.tags]) {
+        Ok(_rows_affected) => {},
+        Err(e) => {
+            error!("Unable to add server to table: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    }
+
 
     response.send(format!("\"server `{}` added!\"", &parsed_server.name));
 }
