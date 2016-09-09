@@ -10,4 +10,4 @@ log = "*"
 env_logger = "*"
 rustc-serialize = "*"
 
-postgres = { version = "0.11.11" }
+postgres="0.11.11"

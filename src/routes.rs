@@ -6,23 +6,29 @@ use postgres::{Connection, SslMode};
 use rustful::{Context, Response, header, StatusCode};
 use rustc_serialize::json;
 
-use game_server::{GameServer, make_game_server_from_row};
+use game_server::{GameServer};
 
-fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> Result<Option<HashSet<&'b str>>, ()>
+enum AllowedRegion<T> {
+    Success,
+    Failure(T),
+    Panic,
+}
+
+fn regions_allowed<'a, 'b, I>(conn: &'a Connection, regions: I) -> AllowedRegion<HashSet<&'b str>>
                     where I: Iterator<Item=&'b str> {
     let all_regions: HashSet<String> = match conn.query("SELECT name FROM region", &[]) {
         Ok(c) => c.into_iter().map(|v| v.get::<usize, String>(0)).collect(),
         Err(e) => {
             error!("Could not execute query in regions_allowed: {:?}", e);
-            return Err(());
+            return AllowedRegion::Panic;
         }
     };
     // FIXME: Is it possible to not make a HashSet on no failures?.
     let failed: HashSet<&'b str> = regions.filter(|r| !all_regions.contains(*r)).collect();
     if failed.len() == 0 {
-        Ok(None)
+        AllowedRegion::Success
     } else {
-        Ok(Some(failed))
+        AllowedRegion::Failure(failed)
     }
 }
 
@@ -38,7 +44,7 @@ pub fn get_all(_ctx: Context, mut response: Response) {
     response.headers_mut().set(header::ContentType::json());
 
     let all: Vec<GameServer> = match conn.query("SELECT * FROM GameServer", &[]) {
-        Ok(r) => r.iter().map(make_game_server_from_row).collect(),
+        Ok(r) => r.iter().map(|r| GameServer::from_row(&r)).collect(),
         Err(e) => {
             error!("Could not execute the query in get_all: {:?}", e);
             response.set_status(StatusCode::InternalServerError);
@@ -56,6 +62,43 @@ pub fn get_all(_ctx: Context, mut response: Response) {
     };
 
     response.send(format!("{{\"results\": {}, \"size\": {}}}", encoded, all.len()));
+}
+
+pub fn update_server(mut context: Context, mut response: Response) {
+    let conn = match Connection::connect("postgres://fula@localhost", SslMode::None) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Connecting to the DB in update_server failed: {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
+    response.headers_mut().set(header::ContentType::json());
+
+    let server_id: i32 = match context.variables.parse("id") {
+        Ok(id) => id,
+        Err(Some(e)) => {
+            error!("Could not parse the ID as an i32: {:?}", e);
+            response.set_status(StatusCode::BadRequest);
+            return;
+        },
+        Err(None) => {
+            error!("Another Error occured during context variable parsing.");
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
+
+    let body = match context.body.read_json_body() {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Could not read update_server json body {:?}", e);
+            response.set_status(StatusCode::InternalServerError);
+            return;
+        }
+    };
+
+    response.send(format!("\"Update recieved I DID NOTHING! Gonna change {}\"", server_id));
 }
 
 pub fn search_server(mut context: Context, mut response: Response) {
@@ -87,20 +130,18 @@ pub fn search_server(mut context: Context, mut response: Response) {
                                          .and_then(|s| Some(s.into()));
 
     match regions_allowed(&conn, search_region.into_iter()) {
-        Ok(v) => match v {
-            None => {},
-            Some(failures) => {
-                response.set_status(StatusCode::BadRequest);
-                response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
-                return;
-           }
+        AllowedRegion::Success => {},
+        AllowedRegion::Failure(failures) => {
+            response.set_status(StatusCode::BadRequest);
+            response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
+            return;
         },
-        Err(_) => {
-            error!("Failed in regions_allowed, can not complete request.");
+        AllowedRegion::Panic => {
+            error!("Failed in search_server/regions_allowed, can not complete request.");
             response.set_status(StatusCode::InternalServerError);
             return;
         }
-    }
+    };
 
     // FIXME: This should not be 4 different queries.
     // Perhaps Diesel will fix this.
@@ -148,11 +189,7 @@ pub fn search_server(mut context: Context, mut response: Response) {
         }
     };
 
-    let mut results = vec![];
-    for row in &selection {
-        results.push(make_game_server_from_row(row));
-    }
-
+    let results: Vec<_> = selection.iter().map(|r| GameServer::from_row(&r)).collect();
     let json_response = match json::encode(&results) {
         Ok(r) => r,
         Err(e) => {
@@ -182,23 +219,19 @@ pub fn add_server(mut context: Context, mut response: Response) {
             return;
         }
     };
-
     match regions_allowed(&conn, Some(parsed_server.region.as_str()).into_iter()) {
-        Ok(v) => match v {
-            None => {},
-            Some(failures) => {
-                response.set_status(StatusCode::BadRequest);
-                response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
-                return;
-           }
+        AllowedRegion::Success => {},
+        AllowedRegion::Failure(failures) => {
+            response.set_status(StatusCode::BadRequest);
+            response.send(format!("\"Regions `{:?}` do not exist in the Database!\"", failures));
+            return;
         },
-        Err(_) => {
-            error!("Failed in regions_allowed, can not complete request.");
+        AllowedRegion::Panic => {
+            error!("Failed in add_server/regions_allowed, can not complete request.");
             response.set_status(StatusCode::InternalServerError);
             return;
         }
-    }
-
+    };
     match conn.execute("INSERT INTO GameServer (name, region, game_type, ip, max_users,
                                             current_users, current_premium_users,
                                             max_premium_users, tags)
@@ -214,8 +247,6 @@ pub fn add_server(mut context: Context, mut response: Response) {
             response.set_status(StatusCode::InternalServerError);
             return;
         }
-    }
-
-
+    };
     response.send(format!("\"server `{}` added!\"", &parsed_server.name));
 }

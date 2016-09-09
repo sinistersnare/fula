@@ -19,6 +19,23 @@ pub struct GameServer {
     pub tags: Vec<String>,
 }
 
+impl GameServer {
+	pub fn from_row(row: &Row) -> GameServer {
+	    GameServer {
+	        id: row.get(0),
+	        name: row.get(1),
+	        region: row.get(2),
+	        game_type: row.get(3),
+	        ip: row.get(4),
+	        max_users: row.get(5),
+	        current_users: row.get(6),
+	        current_premium_users: row.get(7),
+	        max_premium_users: row.get(8),
+	        tags: row.get(9)
+	    }
+	}
+}
+
 impl Decodable for GameServer {
     fn decode<D: Decoder>(d: &mut D) -> Result<GameServer, D::Error> {
         d.read_struct("GameServer", 10, |d| {
@@ -80,20 +97,5 @@ impl Decodable for GameServer {
                 tags: tags
             })
         })
-    }
-}
-
-pub fn make_game_server_from_row(row: Row) -> GameServer {
-    GameServer {
-        id: row.get(0),
-        name: row.get(1),
-        region: row.get(2),
-        game_type: row.get(3),
-        ip: row.get(4),
-        max_users: row.get(5),
-        current_users: row.get(6),
-        current_premium_users: row.get(7),
-        max_premium_users: row.get(8),
-        tags: row.get(9)
     }
 }

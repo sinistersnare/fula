@@ -15,7 +15,7 @@ use std::fs::File;
 use postgres::{Connection, SslMode};
 use rustful::{Server, Context, Response, TreeRouter};
 
-use routes::{get_all, search_server, add_server};
+use routes::{get_all, search_server, add_server, update_server};
 
 mod game_server;
 mod routes;
@@ -52,6 +52,9 @@ fn main() {
                 "add" => {
                     Post: add_server as fn(Context, Response),
                 },
+                "update/:id" => {
+                    Post: update_server as fn(Context, Response),
+                }
             }
         },
         ..Server::default()
