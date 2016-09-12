@@ -52,21 +52,20 @@ fn main() {
         host: 8080.into(),
         handlers: insert_routes!{
             TreeRouter::new() => {
-                // root
-                Get: get_all_servers as fn(Context, Response),
-
-                // next level down
-                "all" => {
+                "server" => {
                     Get: get_all_servers as fn(Context, Response),
-                },
-                "search" => {
-                    Post: search_servers as fn(Context, Response),
-                },
-                "add" => {
-                    Post: add_server as fn(Context, Response),
-                },
-                "update/:id" => {
-                    Post: update_server as fn(Context, Response),
+                    "all" => {
+                        Get: get_all_servers as fn(Context, Response),
+                    },
+                    "search" => {
+                        Post: search_servers as fn(Context, Response),
+                    },
+                    "add" => {
+                        Post: add_server as fn(Context, Response),
+                    },
+                    "update/:id" => {
+                        Post: update_server as fn(Context, Response),
+                    }
                 }
             }
         },
