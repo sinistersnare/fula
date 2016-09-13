@@ -17,7 +17,7 @@ pub enum AllowedRegion<T> {
 }
 
 pub fn regions_allowed<'a, 'b, I>(conn: &'a PgConnection, possible_regions: I)
-					-> AllowedRegion<HashSet<&'b str>> where I: Iterator<Item=&'b str> {
+                    -> AllowedRegion<HashSet<&'b str>> where I: Iterator<Item=&'b str> {
     use ::schema::regions::dsl::*;
 
     let all_regions: HashSet<String> = match regions.load::<Region>(conn) {

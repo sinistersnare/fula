@@ -32,16 +32,24 @@ mod then_impl;
 
 // TODO: Documentation? Doc comments would be nice.
 
+/// Creates and returns a connection to the database
+/// Or, on failure, a string detailing the error.
 fn establish_connection() -> Result<PgConnection, &'static str> {
     dotenv().ok();
 
     let database_url = match env::var("DATABASE_URL") {
         Ok(d) => d,
-        Err(_e) => {return Err("DATABASE_URL must be set")},
+        Err(e) => {
+            error!("DATABASE_URL variable not set: {:?}", e);
+            return Err("DATABASE_URL must be set");
+        },
     };
     match PgConnection::establish(&database_url) {
         Ok(c) => Ok(c),
-        Err(_e) => Err("Error connecting to DATABASE_URL"),
+        Err(e) => {
+            error!("Could not establish a connection to the DB: {:?}", e);
+            Err("Error connecting to DATABASE_URL")
+        },
     }
 }
 
