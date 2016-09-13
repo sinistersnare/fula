@@ -21,7 +21,7 @@ pub fn get_all_servers(_ctx: Context, mut response: Response) {
     let all: Vec<GameServer> = match game_servers.load(&conn) {
         Ok(servers) => servers,
         Err(e) => {
-            error!("Could not execute query query in get_all: {:?}", e);
+            error!("Could not execute query query in get_all_regions: {:?}", e);
             response.set_status(StatusCode::InternalServerError);
             return;
         }
@@ -30,7 +30,7 @@ pub fn get_all_servers(_ctx: Context, mut response: Response) {
     let encoded = match json::encode(&all) {
         Ok(v) => v,
         Err(e) => {
-            error!("Could not encode results of get_all query as json: {:?}", e);
+            error!("Could not encode results of get_all_servers query as json: {:?}", e);
             response.set_status(StatusCode::InternalServerError);
             return;
         }

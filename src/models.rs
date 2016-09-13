@@ -6,11 +6,17 @@ use rustc_serialize::{Decoder, Decodable, DecoderHelpers};
 use diesel::ExpressionMethods;
 
 use ::schema::game_servers;
+use ::schema::regions;
 use ::then_impl::Then;
 
 #[derive(Debug, Clone, RustcEncodable, Queryable)]
 pub struct Region {
     pub id: i32,
+    pub name: String,
+}
+
+#[insertable_into(regions)]
+pub struct NewRegion {
     pub name: String,
 }
 

@@ -22,7 +22,7 @@ pub fn add_server(mut context: Context, mut response: Response) {
         Ok(s) => s,
         Err(e) => {
             error!("Could not decode request JSON into a GameServer object: {:?}", e);
-            response.set_status(StatusCode::InternalServerError);
+            response.set_status(StatusCode::BadRequest);
             return;
         }
     };

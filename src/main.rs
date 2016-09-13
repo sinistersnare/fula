@@ -23,8 +23,8 @@ use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use dotenv::dotenv;
 
-use routes::{get_all_servers, add_server, update_server, search_servers};
-
+use routes::server::{get_all_servers, add_server, update_server, search_servers};
+use routes::region::{add_region, get_all_regions};
 mod schema;
 mod models;
 mod routes;
@@ -65,7 +65,16 @@ fn main() {
                     },
                     "update/:id" => {
                         Post: update_server as fn(Context, Response),
-                    }
+                    },
+                },
+                "region" => {
+                    Get: get_all_regions as fn(Context, Response),
+                    "all" => {
+                        Get: get_all_regions as fn(Context, Response),
+                    },
+                    "add" => {
+                        Post: add_region as fn(Context, Response),
+                    },
                 }
             }
         },
