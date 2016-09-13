@@ -39,7 +39,6 @@ pub fn add_server(mut context: Context, mut response: Response) {
             return;
         }
     };
-
     match diesel::insert(&parsed_server).into(game_servers::table).execute(&conn) {
         Ok(_) => {},
         Err(e) => {

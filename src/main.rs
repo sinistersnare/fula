@@ -23,7 +23,7 @@ use diesel::prelude::*;
 use diesel::pg::PgConnection;
 use dotenv::dotenv;
 
-use routes::server::{get_all_servers, add_server, update_server, search_servers};
+use routes::server::{get_all_servers, add_server, update_server, search_servers, delete_server};
 use routes::region::{add_region, get_all_regions};
 mod schema;
 mod models;
@@ -66,6 +66,9 @@ fn main() {
                     "update/:id" => {
                         Post: update_server as fn(Context, Response),
                     },
+                    "delete/:id" => {
+                        Post: delete_server as fn(Context, Response),
+                    }
                 },
                 "region" => {
                     Get: get_all_regions as fn(Context, Response),
@@ -82,8 +85,7 @@ fn main() {
     }.run();
 
     match server {
-        Ok(_) => {},
+        Ok(_) => println!("Ready to go! Send requests now!"),
         Err(e) => error!("could not start server: {}", e.description())
     }
-    println!("Ready to go! Send requests now!")
 }

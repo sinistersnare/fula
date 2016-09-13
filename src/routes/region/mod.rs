@@ -6,7 +6,6 @@ use rustc_serialize::json;
 
 use ::establish_connection;
 use ::models::{NewRegion, Region};
-use ::routes::{regions_allowed, AllowedRegion};
 
 pub fn get_all_regions(_context: Context, mut response: Response) {
 	use ::schema::regions::dsl::*;
